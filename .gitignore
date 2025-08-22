@@ -1,0 +1,27 @@
+# Xcode
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+
+# SwiftPM
+.swiftpm/
+.build/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+
+# Misc
+.DS_Store
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Secrets
+*.p8
+*.pem
+*.key
+.env
