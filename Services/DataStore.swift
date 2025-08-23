@@ -75,7 +75,9 @@ class DataStore: ObservableObject {
         
         container.loadPersistentStores { description, error in
             if let error = error {
-                print("❌ CoreData error: \(error)")
+                #if DEBUG
+                print("❌ CoreData error: \(error.localizedDescription)")
+                #endif
                 // Fallback sur UserDefaults
                 self.loadFromUserDefaults()
             } else {
@@ -100,33 +102,48 @@ class DataStore: ObservableObject {
     
     // MARK: - UserDefaults (fallback simple)
     private func loadFromUserDefaults() {
-        if let contactsData = userDefaults.data(forKey: "contacts"),
-           let decoded = try? JSONDecoder().decode([Contact].self, from: contactsData) {
-            contacts = decoded
-        }
-        
-        if let messagesData = userDefaults.data(forKey: "scheduledMessages"),
-           let decoded = try? JSONDecoder().decode([ScheduledMessage].self, from: messagesData) {
-            scheduledMessages = decoded
-        }
-        
-        if let receivedData = userDefaults.data(forKey: "receivedMessages"),
-           let decoded = try? JSONDecoder().decode([ReceivedMessage].self, from: receivedData) {
-            receivedMessages = decoded
+        do {
+            if let contactsData = userDefaults.data(forKey: "contacts") {
+                let decoded = try JSONDecoder().decode([Contact].self, from: contactsData)
+                contacts = decoded.filter { isValidContact($0) }
+            }
+            
+            if let messagesData = userDefaults.data(forKey: "scheduledMessages") {
+                let decoded = try JSONDecoder().decode([ScheduledMessage].self, from: messagesData)
+                scheduledMessages = decoded.filter { isValidMessage($0) }
+            }
+            
+            if let receivedData = userDefaults.data(forKey: "receivedMessages") {
+                let decoded = try JSONDecoder().decode([ReceivedMessage].self, from: receivedData)
+                receivedMessages = decoded.filter { isValidReceivedMessage($0) }
+            }
+        } catch {
+            #if DEBUG
+            print("❌ Erreur chargement UserDefaults: \(error.localizedDescription)")
+            #endif
         }
     }
     
     private func saveToUserDefaults() {
-        if let encoded = try? JSONEncoder().encode(contacts) {
-            userDefaults.set(encoded, forKey: "contacts")
-        }
-        
-        if let encoded = try? JSONEncoder().encode(scheduledMessages) {
-            userDefaults.set(encoded, forKey: "scheduledMessages")
-        }
-        
-        if let encoded = try? JSONEncoder().encode(receivedMessages) {
-            userDefaults.set(encoded, forKey: "receivedMessages")
+        do {
+            let encoder = JSONEncoder()
+            
+            let validContacts = contacts.filter { isValidContact($0) }
+            let encodedContacts = try encoder.encode(validContacts)
+            userDefaults.set(encodedContacts, forKey: "contacts")
+            
+            let validMessages = scheduledMessages.filter { isValidMessage($0) }
+            let encodedMessages = try encoder.encode(validMessages)
+            userDefaults.set(encodedMessages, forKey: "scheduledMessages")
+            
+            let validReceivedMessages = receivedMessages.filter { isValidReceivedMessage($0) }
+            let encodedReceived = try encoder.encode(validReceivedMessages)
+            userDefaults.set(encodedReceived, forKey: "receivedMessages")
+            
+        } catch {
+            #if DEBUG
+            print("❌ Erreur sauvegarde UserDefaults: \(error.localizedDescription)")
+            #endif
         }
     }
     
@@ -139,13 +156,25 @@ class DataStore: ObservableObject {
     }
     
     func saveSettings() {
-        if let encoded = try? JSONEncoder().encode(userSettings) {
+        do {
+            let encoded = try JSONEncoder().encode(userSettings)
             userDefaults.set(encoded, forKey: "userSettings")
+        } catch {
+            #if DEBUG
+            print("❌ Erreur sauvegarde settings: \(error.localizedDescription)")
+            #endif
         }
     }
     
     // MARK: - CRUD Contacts
     func addContact(_ contact: Contact) {
+        guard isValidContact(contact), !contacts.contains(where: { $0.id == contact.id }) else {
+            #if DEBUG
+            print("⚠️ Contact invalide ou déjà existant")
+            #endif
+            return
+        }
+        
         contacts.append(contact)
         saveToUserDefaults()
     }
@@ -161,6 +190,13 @@ class DataStore: ObservableObject {
     
     // MARK: - CRUD Messages
     func scheduleMessage(_ message: ScheduledMessage) {
+        guard isValidMessage(message), !scheduledMessages.contains(where: { $0.id == message.id }) else {
+            #if DEBUG
+            print("⚠️ Message invalide ou déjà existant")
+            #endif
+            return
+        }
+        
         scheduledMessages.append(message)
         saveToUserDefaults()
         
@@ -177,6 +213,13 @@ class DataStore: ObservableObject {
     }
     
     func addReceivedMessage(_ message: ReceivedMessage) {
+        guard isValidReceivedMessage(message), !receivedMessages.contains(where: { $0.id == message.id }) else {
+            #if DEBUG
+            print("⚠️ Message reçu invalide ou déjà existant")
+            #endif
+            return
+        }
+        
         receivedMessages.append(message)
         saveToUserDefaults()
     }
@@ -245,4 +288,23 @@ class DataStore: ObservableObject {
         }
     }
     #endif
+    
+    // MARK: - Validation des données
+    private func isValidContact(_ contact: Contact) -> Bool {
+        return !contact.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+               !contact.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+               contact.phone.count >= 10
+    }
+    
+    private func isValidMessage(_ message: ScheduledMessage) -> Bool {
+        return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+               message.scheduledDate > Date() &&
+               !message.avatarId.isEmpty &&
+               getContact(by: message.contactId) != nil
+    }
+    
+    private func isValidReceivedMessage(_ message: ReceivedMessage) -> Bool {
+        return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+               !message.avatarId.isEmpty
+    }
 }

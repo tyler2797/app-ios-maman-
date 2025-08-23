@@ -21,6 +21,10 @@ class NotificationManager: NSObject, ObservableObject {
         setupNotifications()
     }
     
+    deinit {
+        cancellables.removeAll()
+    }
+    
     // MARK: - Configuration initiale
     private func setupNotifications() {
         // Observer les changements de statut d'autorisation
@@ -37,13 +41,23 @@ class NotificationManager: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 switch settings.authorizationStatus {
                 case .authorized:
+                    #if DEBUG
                     print("✅ Notifications autorisées")
+                    #endif
                 case .denied:
+                    #if DEBUG
                     print("❌ Notifications refusées")
+                    #endif
                 case .notDetermined:
                     self.requestAuthorization()
-                default:
-                    break
+                case .provisional:
+                    #if DEBUG
+                    print("⚠️ Notifications provisoires")
+                    #endif
+                @unknown default:
+                    #if DEBUG
+                    print("⚠️ Statut de notification inconnu")
+                    #endif
                 }
             }
         }
@@ -52,9 +66,23 @@ class NotificationManager: NSObject, ObservableObject {
     // MARK: - Demande d'autorisation
     func requestAuthorization() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-            if granted {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                if let error = error {
+                    #if DEBUG
+                    print("❌ Erreur autorisation notifications: \(error.localizedDescription)")
+                    #endif
+                    return
+                }
+                
+                if granted {
                     UIApplication.shared.registerForRemoteNotifications()
+                    #if DEBUG
+                    print("✅ Notifications autorisées")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("❌ Notifications refusées par l'utilisateur")
+                    #endif
                 }
             }
         }
@@ -98,10 +126,16 @@ class NotificationManager: NSObject, ObservableObject {
     // MARK: - Extraction des données
     private func extractMessageData(from userInfo: [AnyHashable: Any]) -> (message: ReceivedMessage, avatarId: String)? {
         guard let messageId = userInfo["messageId"] as? String,
+              !messageId.isEmpty,
               let content = userInfo["content"] as? String,
+              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let avatarId = userInfo["avatarId"] as? String,
+              !avatarId.isEmpty,
               let contactIdString = userInfo["contactId"] as? String,
               let contactId = UUID(uuidString: contactIdString) else {
+            #if DEBUG
+            print("⚠️ Données de notification invalides ou manquantes")
+            #endif
             return nil
         }
         
@@ -139,9 +173,13 @@ class NotificationManager: NSObject, ObservableObject {
         
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("❌ Erreur programmation notification: \(error)")
+                #if DEBUG
+                print("❌ Erreur programmation notification: \(error.localizedDescription)")
+                #endif
             } else {
+                #if DEBUG
                 print("✅ Notification programmée pour \(message.scheduledDate)")
+                #endif
             }
         }
     }
